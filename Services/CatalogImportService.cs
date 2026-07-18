@@ -23,6 +23,7 @@ public class CatalogImportService(
     public async Task ImportCatalogAsync(
         string catalogId,
         string type,
+        Guid instanceId,
         CancellationToken ct,
         IProgress<double>? progress = null
     )
@@ -39,7 +40,8 @@ public class CatalogImportService(
             logger.LogInformation("Catalog {Id} {Type} is disabled, skipping.", catalogId, type);
             return;
         }
-        var cfg = GelatoPlugin.Instance!.GetConfig(Guid.Empty);
+        // MULTIlato: import into the given instance's own manifest and folders.
+        var cfg = GelatoPlugin.Instance!.GetConfig(Guid.Empty, instanceId);
         var stremio = cfg.Stremio;
         var seriesFolder = cfg.SeriesFolder;
         var movieFolder = cfg.MovieFolder;
@@ -268,22 +270,37 @@ public class CatalogImportService(
 
     public async Task SyncAllEnabledAsync(CancellationToken ct, IProgress<double>? progress = null)
     {
-        var catalogs = await catalogService.GetCatalogsAsync(Guid.Empty);
-        var enabled = catalogs.Where(c => c.Enabled).ToList();
+        // MULTIlato: run the enabled-catalog list against every usable instance's own manifest,
+        // importing into that instance's own movie/series folders.
+        var instances = GelatoPlugin.Instance!.Configuration.UsableInstances();
+        var jobs = new List<(StremioInstanceConfig Instance, CatalogConfig Catalog)>();
 
-        if (enabled.Count == 0)
+        foreach (var inst in instances)
+        {
+            var catalogs = await catalogService.GetCatalogsAsync(Guid.Empty, inst.Id);
+            foreach (var cat in catalogs.Where(c => c.Enabled))
+            {
+                jobs.Add((inst, cat));
+            }
+        }
+
+        if (jobs.Count == 0)
         {
             progress?.Report(100);
             return;
         }
 
-        var total = enabled.Sum(c => c.MaxItems);
+        var total = jobs.Sum(j => j.Catalog.MaxItems);
         var offset = 0;
 
-        foreach (var cat in enabled)
+        foreach (var (inst, cat) in jobs)
         {
             ct.ThrowIfCancellationRequested();
-            logger.LogInformation("Processing enabled catalog: {Name}", cat.Name);
+            logger.LogInformation(
+                "Processing enabled catalog: {Name} (instance: {Instance})",
+                cat.Name,
+                inst.Name
+            );
 
             var catMax = cat.MaxItems;
             var localOffset = offset;
@@ -294,7 +311,8 @@ public class CatalogImportService(
                         progress.Report((localOffset + p / 100.0 * catMax) / total * 100.0)
                     );
 
-            await ImportCatalogAsync(cat.Id, cat.Type, ct, catProgress).ConfigureAwait(false);
+            await ImportCatalogAsync(cat.Id, cat.Type, inst.Id, ct, catProgress)
+                .ConfigureAwait(false);
 
             offset += catMax;
         }

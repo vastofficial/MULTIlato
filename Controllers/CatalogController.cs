@@ -63,7 +63,7 @@ public class CatalogController(
         {
             try
             {
-                await importService.ImportCatalogAsync(id, type, CancellationToken.None);
+                await importService.ImportCatalogAsync(id, type, Guid.Empty, CancellationToken.None);
                 //await libraryManager
                 //    .ValidateMediaLibrary(new Progress<double>(), CancellationToken.None)
                 //    .ConfigureAwait(false);

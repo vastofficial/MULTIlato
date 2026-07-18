@@ -4,10 +4,15 @@ namespace Gelato.Services;
 
 public class CatalogService(GelatoStremioProviderFactory stremioFactory)
 {
-    public async Task<List<CatalogConfig>> GetCatalogsAsync(Guid userId)
+    public Task<List<CatalogConfig>> GetCatalogsAsync(Guid userId) =>
+        GetCatalogsAsync(userId, Guid.Empty);
+
+    // MULTIlato: fetch catalogs from a specific manifest instance (Guid.Empty = default instance).
+    public async Task<List<CatalogConfig>> GetCatalogsAsync(Guid userId, Guid instanceId)
     {
         var config = GelatoPlugin.Instance!.Configuration;
-        var provider = stremioFactory.Create(userId);
+        var cfg = GelatoPlugin.Instance!.GetConfig(userId, instanceId);
+        var provider = stremioFactory.Create(cfg);
         var manifest = await provider.GetManifestAsync();
 
         if (manifest?.Catalogs == null)
