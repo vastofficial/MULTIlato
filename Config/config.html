@@ -4,7 +4,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Gelato</title>
+  <title>MULTIlato</title>
 </head>
 
 <body>
@@ -14,7 +14,7 @@
         <form id="gelatoForm">
           <div class="verticalSection">
             <div class="sectionTitleContainer flex align-items-center">
-              <h2 class="sectionTitle">Gelato Configuration</h2>
+              <h2 class="sectionTitle">MULTIlato Configuration</h2>
             </div>
           </div>
 
@@ -24,6 +24,8 @@
               style="display: flex; border-bottom: 1px solid rgba(255, 255, 255, 0.1); margin-bottom: 2em; gap: 2em;">
               <button type="button" class="paper-icon-button-light tab-button active" data-tab="general"
                 style="padding: 0.5em 0; border-bottom: 2px solid #00a4dc; cursor: pointer; background: none; color: inherit; font-weight: bold; opacity: 1;">General</button>
+              <button type="button" class="paper-icon-button-light tab-button" data-tab="instances"
+                style="padding: 0.5em 0; border-bottom: 2px solid transparent; cursor: pointer; background: none; color: inherit; font-weight: bold; opacity: 0.6;">Instances</button>
               <button type="button" class="paper-icon-button-light tab-button" data-tab="catalogs"
                 style="padding: 0.5em 0; border-bottom: 2px solid transparent; cursor: pointer; background: none; color: inherit; font-weight: bold; opacity: 0.6;">Catalogs</button>
               <button type="button" class="paper-icon-button-light tab-button" data-tab="userconfigs"
@@ -118,6 +120,27 @@
               <label class="inputLabel inputLabelUnfocused" for="txtBufferDays">Release buffer days:</label>
               <input is="emby-input" type="number" id="txtBufferDays" class="emby-input" />
               <div class="fieldDescription">Items released within these many days will be hidden if filter is enabled.
+              </div>
+            </div>
+          </div>
+
+          <!-- Instances Tab -->
+          <div id="tab-instances" class="tab-content" style="display: none;">
+            <div class="verticalSection">
+              <div class="sectionTitleContainer">
+                <h3 class="sectionTitle">Manifest Instances</h3>
+                <div class="fieldDescription">
+                  Each instance is its own AIOStreams manifest with its own movie and series library.
+                  Search and catalog import run across every enabled instance.
+                </div>
+              </div>
+
+              <div id="instancesList" style="margin-bottom: 1em;"></div>
+
+              <div style="display: flex; justify-content: flex-end;">
+                <button type="button" is="emby-button" class="raised emby-button" id="btnAddInstance">
+                  <span>Add Instance</span>
+                </button>
               </div>
             </div>
           </div>
@@ -247,7 +270,7 @@
 
     <script type="text/javascript">
       (function () {
-        const pluginId = "94EA4E14-8163-4989-96FE-0A2094BC2D6A";
+        const pluginId = "7A31C9D4-52E6-4A0B-9B1F-3D8E6F2C41AA";
         const guidRegex = /^[0-9a-f]{32}$/i;
         // Unique ID for this IIFE instance to prevent collisions if multiple loaded
         const pageId = "gelatoConfigurationPage";
@@ -307,6 +330,11 @@
         const btnRefreshCatalogs = page.querySelector('#btnRefreshCatalogs');
         let allCatalogs = [];
 
+        // Instances
+        const instancesList = page.querySelector('#instancesList');
+        const btnAddInstance = page.querySelector('#btnAddInstance');
+        let allInstances = [];
+
         // Overrides
         const selUserConfig = page.querySelector('#selUserConfig');
         const userOverrideContainer = page.querySelector('#userOverrideContainer');
@@ -333,6 +361,133 @@
           });
           return obj;
         }
+
+        function generateGuid() {
+          if (window.crypto && crypto.randomUUID) return crypto.randomUUID();
+          return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
+            const r = Math.random() * 16 | 0;
+            const v = c === 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+          });
+        }
+
+        function renderInstances() {
+          instancesList.innerHTML = '';
+
+          if (allInstances.length === 0) {
+            instancesList.innerHTML = '<p style="padding: 1em; text-align: center; opacity: 0.7;">No manifest instances configured yet. Click "Add Instance" to create one.</p>';
+            return;
+          }
+
+          allInstances.forEach((inst, idx) => {
+            const card = document.createElement('div');
+            card.style.cssText = 'padding: 1em; margin-bottom: 1em; background: rgba(0,0,0,0.1); border-radius: 4px;';
+
+            const header = document.createElement('div');
+            header.style.cssText = 'display: flex; align-items: center; gap: 1em; margin-bottom: 0.75em;';
+
+            const nameInput = document.createElement('input');
+            nameInput.is = 'emby-input';
+            nameInput.type = 'text';
+            nameInput.classList.add('emby-input');
+            nameInput.placeholder = 'Instance name (e.g. Main, Kids, 4K)';
+            nameInput.value = inst.Name || '';
+            nameInput.style.flex = '1';
+            nameInput.addEventListener('input', () => { inst.Name = nameInput.value; });
+            header.appendChild(nameInput);
+
+            const enabledLabel = document.createElement('label');
+            enabledLabel.style.cssText = 'display: flex; align-items: center; gap: 0.4em; white-space: nowrap;';
+            const enabledCheck = document.createElement('input');
+            enabledCheck.is = 'emby-checkbox';
+            enabledCheck.type = 'checkbox';
+            enabledCheck.checked = inst.Enabled !== false;
+            enabledCheck.addEventListener('change', () => { inst.Enabled = enabledCheck.checked; });
+            enabledLabel.appendChild(enabledCheck);
+            enabledLabel.appendChild(document.createTextNode('Enabled'));
+            header.appendChild(enabledLabel);
+
+            const delBtn = document.createElement('button');
+            delBtn.type = 'button';
+            delBtn.is = 'emby-button';
+            delBtn.className = 'emby-button';
+            delBtn.textContent = 'Remove';
+            delBtn.addEventListener('click', () => {
+              if (!confirm('Remove instance "' + (inst.Name || 'Unnamed') + '"?')) return;
+              allInstances.splice(idx, 1);
+              renderInstances();
+            });
+            header.appendChild(delBtn);
+
+            card.appendChild(header);
+
+            const fields = [
+              ['Url', 'AIOStreams URL (manifest or base):'],
+              ['MoviePath', 'Movies path:'],
+              ['SeriesPath', 'Series path:'],
+            ];
+
+            fields.forEach(([field, label]) => {
+              const container = document.createElement('div');
+              container.className = 'inputContainer';
+
+              const lbl = document.createElement('label');
+              lbl.className = 'inputLabel inputLabelUnfocused';
+              lbl.textContent = label;
+
+              const input = document.createElement('input');
+              input.is = 'emby-input';
+              input.type = 'text';
+              input.classList.add('emby-input');
+              input.value = inst[field] || '';
+              input.addEventListener('input', () => { inst[field] = input.value; });
+
+              container.appendChild(lbl);
+              container.appendChild(input);
+              card.appendChild(container);
+            });
+
+            instancesList.appendChild(card);
+          });
+        }
+
+        function addInstance() {
+          allInstances.push({
+            Id: generateGuid(),
+            Name: 'New instance',
+            Url: '',
+            MoviePath: '',
+            SeriesPath: '',
+            Enabled: true,
+          });
+          renderInstances();
+        }
+
+        // MULTIlato: instance list load/save, wired into the existing config load/save handlers.
+        window.multilatoInstances = {
+          load: function (cfg) {
+            allInstances = (cfg.Instances || []).map(i => ({
+              Id: i.Id || generateGuid(),
+              Name: i.Name || '',
+              Url: i.Url || '',
+              MoviePath: i.MoviePath || '',
+              SeriesPath: i.SeriesPath || '',
+              Enabled: i.Enabled !== false,
+            }));
+            renderInstances();
+          },
+          save: function (cfg) {
+            cfg.Instances = allInstances.map(i => ({
+              Id: i.Id,
+              Name: i.Name || '',
+              Url: i.Url || '',
+              MoviePath: i.MoviePath || '',
+              SeriesPath: i.SeriesPath || '',
+              Enabled: i.Enabled !== false,
+            }));
+          },
+        };
+
         async function loadCatalogs() {
           try {
             // Show loading spinner in list
@@ -595,6 +750,8 @@
             if (chkEnableJavaScriptInjection) chkEnableJavaScriptInjection.checked = cfg.EnableJavaScriptInjection || false;
             if (chkLazyImages) chkLazyImages.checked = cfg.LazyImages ?? false;
 
+            window.multilatoInstances.load(cfg);
+
             // User Overrides Logic
             await loadUsers();
             renderOverridesList();
@@ -629,6 +786,8 @@
             cfg.FFmpegProbeSize = txtFFmpegProbeSize.value;
             cfg.EnableJavaScriptInjection = chkEnableJavaScriptInjection.checked;
             cfg.LazyImages = chkLazyImages.checked;
+
+            window.multilatoInstances.save(cfg);
 
             // Only collect catalog states if catalogs have been loaded (i.e., if we're on catalogs tab or it was loaded)
             if (allCatalogs.length > 0) {
@@ -786,6 +945,7 @@
           btnRefreshCatalogs.addEventListener('click', loadCatalogs);
           page.querySelector('#btnImportAll').addEventListener('click', triggerImportAll);
           selUserConfig.addEventListener('change', onUserSelected);
+          btnAddInstance.addEventListener('click', addInstance);
 
           // Tab 1 active by default
           const startTab = page.querySelector('.tab-button[data-tab="general"]');
