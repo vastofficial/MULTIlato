@@ -3,6 +3,7 @@ using Gelato.Config;
 using Gelato.Services;
 using MediaBrowser.Common.Configuration;
 using MediaBrowser.Common.Plugins;
+using MediaBrowser.Controller.Entities;
 using MediaBrowser.Model.Plugins;
 using MediaBrowser.Model.Serialization;
 using Microsoft.Extensions.Logging;
@@ -13,9 +14,13 @@ public class GelatoPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
 {
     private readonly ILogger<GelatoPlugin> _log;
     private readonly GelatoManager _manager;
-    private ConcurrentDictionary<Guid, PluginConfiguration> UserConfigs { get; } = new();
+
+    // MULTIlato: cache is keyed by (userId, instanceId) instead of userId.
+    private ConcurrentDictionary<(Guid UserId, Guid InstanceId), PluginConfiguration> UserConfigs
+    { get; } = new();
+
     private readonly GelatoStremioProviderFactory _stremioFactory;
-    public PalcoCacheService PalcoCache { get; } // Migrated Palco Cache Service
+    public PalcoCacheService PalcoCache { get; }
 
     public GelatoPlugin(
         IApplicationPaths applicationPaths,
@@ -32,16 +37,26 @@ public class GelatoPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
         _manager = manager;
         _stremioFactory = stremioFactory;
         PalcoCache = palcoCache;
+
+        // MULTIlato: wrap a legacy single-manifest config into instance #1.
+        if (Configuration.MigrateLegacyInstance())
+        {
+            SaveConfiguration();
+            _log.LogInformation("MULTIlato: migrated legacy single manifest into instance list");
+        }
     }
 
     public static GelatoPlugin? Instance { get; private set; }
 
-    // Event fired when the plugin configuration is updated via UpdateConfiguration
     public static new event Action<PluginConfiguration>? ConfigurationChanged;
 
-    public override string Name => "Gelato";
-    public override Guid Id => Guid.Parse("94EA4E14-8163-4989-96FE-0A2094BC2D6A");
-    public override string Description => "on-demand MediaSources and optional image suppression.";
+    public override string Name => "MULTIlato";
+
+    // New GUID so MULTIlato installs as a distinct plugin (do not run next to stock Gelato).
+    public override Guid Id => Guid.Parse("7A31C9D4-52E6-4A0B-9B1F-3D8E6F2C41AA");
+
+    public override string Description =>
+        "Gelato fork: multiple AIOStreams manifests, each with its own movie/series library.";
 
     /// <inheritdoc />
     public IEnumerable<PluginPageInfo> GetPages()
@@ -62,13 +77,18 @@ public class GelatoPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
         {
             cfg.P2PEnabled = false;
         }
-        base.UpdateConfiguration(cfg);
 
+        // MULTIlato: seed every instance's folders on save so libraries can be added right away.
+        foreach (var inst in cfg.UsableInstances())
+        {
+            _manager.SeedInstanceFolders(inst);
+        }
+
+        base.UpdateConfiguration(cfg);
         _manager.ClearCache();
         _stremioFactory.ClearCache();
         UserConfigs.Clear();
 
-        // Notify subscribers that configuration changed
         try
         {
             ConfigurationChanged?.Invoke(cfg);
@@ -79,24 +99,49 @@ public class GelatoPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
         }
     }
 
+    /// <summary>
+    /// Back-compat entry point used by existing call sites: resolves the DEFAULT instance.
+    /// </summary>
     public PluginConfiguration GetConfig(Guid userId)
+    {
+        var inst = Configuration.DefaultInstance();
+        return GetConfig(userId, inst?.Id ?? Guid.Empty);
+    }
+
+    /// <summary>
+    /// Effective config for one user on one manifest instance.
+    /// </summary>
+    public PluginConfiguration GetConfig(Guid userId, Guid instanceId)
     {
         try
         {
             return UserConfigs.GetOrAdd(
-                userId,
-                _ =>
+                (userId, instanceId),
+                key =>
                 {
-                    var cfg = Instance?.Configuration;
-                    if (userId != Guid.Empty)
+                    var root = Instance?.Configuration ?? new PluginConfiguration();
+                    var cfg = root;
+
+                    if (key.UserId != Guid.Empty)
                     {
-                        var userConfig = Instance?.Configuration.UserConfigs.FirstOrDefault(u =>
-                            u.UserId == userId
+                        var userConfig = root.UserConfigs.FirstOrDefault(u =>
+                            u.UserId == key.UserId
                         );
-                        cfg =
-                            userConfig?.ApplyOverrides(Instance?.Configuration)
-                            ?? Instance?.Configuration;
+                        cfg = userConfig?.ApplyOverrides(root) ?? root;
                     }
+
+                    // Clone-ish: overlay the instance's url/paths onto the effective cfg
+                    // so all downstream code that reads cfg.Url/MoviePath/SeriesPath
+                    // keeps working unchanged.
+                    var inst =
+                        root.Instances.FirstOrDefault(i => i.Id == key.InstanceId && i.IsUsable)
+                        ?? root.DefaultInstance();
+
+                    if (inst is not null)
+                    {
+                        cfg = cfg.ShallowCloneForInstance(inst); // overlay instance url/paths
+                    }
+
                     var stremio = _stremioFactory.Create(cfg);
                     cfg.Stremio = stremio;
                     cfg.MovieFolder = _manager.TryGetMovieFolder(cfg);
@@ -110,5 +155,26 @@ public class GelatoPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
             _log.LogWarning(ex, "Error getting config");
             return new PluginConfiguration();
         }
+    }
+
+    /// <summary>
+    /// All enabled instances' effective configs for a user (search fan-out, catalog import).
+    /// Order = configured order = priority order for dedupe.
+    /// </summary>
+    public IReadOnlyList<PluginConfiguration> GetConfigs(Guid userId)
+    {
+        return Configuration
+            .UsableInstances()
+            .Select(i => GetConfig(userId, i.Id))
+            .ToList();
+    }
+
+    /// <summary>
+    /// Effective config for the instance that owns a given library item.
+    /// </summary>
+    public PluginConfiguration GetConfigForItem(Guid userId, BaseItem? item)
+    {
+        var inst = StremioInstanceResolver.ResolveForItem(Configuration, item);
+        return GetConfig(userId, inst?.Id ?? Guid.Empty);
     }
 }
