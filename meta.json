@@ -1,0 +1,15 @@
+{
+  "category": "General",
+  "changelog": "Initial MULTIlato release: multiple AIOStreams manifests, each with its own movie/series library.",
+  "description": "Gelato fork with support for multiple AIOStreams manifests, each mapped to its own movie and series library.",
+  "guid": "7a31c9d4-52e6-4a0b-9b1f-3d8e6f2c41aa",
+  "imagePath": "",
+  "name": "MULTIlato",
+  "overview": "Multi-manifest Stremio/AIOStreams integration for Jellyfin.",
+  "owner": "vastofficial",
+  "targetAbi": "10.11.6.0",
+  "timestamp": "2026-07-18T12:00:00Z",
+  "version": "0.26.15.1001",
+  "status": "Active",
+  "autoUpdate": true
+}
