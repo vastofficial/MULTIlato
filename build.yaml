@@ -1,12 +1,12 @@
 ---
-name: "Gelato"
-guid: "94EA4E14-8163-4989-96FE-0A2094BC2D6A"
-version: "0.26.15.1"
+name: "MULTIlato"
+guid: "7A31C9D4-52E6-4A0B-9B1F-3D8E6F2C41AA"
+version: "0.26.15.1001"
 targetAbi: "10.11.6.0"
 framework: "net9.0"
-owner: "lstb1t"
+owner: "vastofficial"
 artifacts:
-  - "Gelato.dll"
+  - "MULTIlato.dll"
   - "Mono.Nat.dll"
   - "MonoTorrent.BEncoding.dll"
   - "MonoTorrent.Client.dll"
@@ -20,9 +20,11 @@ artifacts:
   - "MonoTorrent.PortForwarding.dll"
   - "MonoTorrent.Trackers.dll"
   - "ReusableTasks.dll"
-overview: "Stream external media."
+overview: "Multi-manifest Stremio/AIOStreams integration for Jellyfin."
 description: >
-  Stream external media.
+  Gelato fork with support for multiple AIOStreams manifests, each mapped to its own
+  movie and series library.
 category: "General"
 changelog: >
-  changelog
+  Initial MULTIlato release: multiple AIOStreams manifests, each with its own
+  movie/series library.
