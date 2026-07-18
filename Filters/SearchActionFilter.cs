@@ -28,7 +28,6 @@ public class SearchActionFilter(
             cfg.DisableSearch
             || !ctx.IsApiSearchAction()
             || !ctx.TryGetActionArgument<string>("searchTerm", out var searchTerm)
-            || !await cfg.Stremio.IsReady()
         )
         {
             await next();
@@ -51,10 +50,26 @@ public class SearchActionFilter(
             return;
         }
 
+        // MULTIlato: fan out search across every usable manifest instance.
+        var instanceConfigs = new List<PluginConfiguration>();
+        foreach (var instCfg in GelatoPlugin.Instance!.GetConfigs(userId))
+        {
+            if (instCfg.Stremio is not null && await instCfg.Stremio.IsReady())
+            {
+                instanceConfigs.Add(instCfg);
+            }
+        }
+
+        if (instanceConfigs.Count == 0)
+        {
+            await next();
+            return;
+        }
+
         ctx.TryGetActionArgument("startIndex", out var start, 0);
         ctx.TryGetActionArgument("limit", out var limit, 25);
 
-        var metas = await SearchMetasAsync(searchTerm, requestedTypes, cfg, userId);
+        var metas = await SearchMetasAsync(searchTerm, requestedTypes, instanceConfigs, cfg);
 
         log.LogInformation(
             "Intercepted /Items search \"{Query}\" types=[{Types}] start={Start} limit={Limit} results={Results}",
@@ -112,44 +127,42 @@ public class SearchActionFilter(
     private async Task<List<StremioMeta>> SearchMetasAsync(
         string searchTerm,
         HashSet<BaseItemKind> requestedTypes,
-        PluginConfiguration cfg,
-        Guid userId
+        List<PluginConfiguration> instanceConfigs,
+        PluginConfiguration globalCfg
     )
     {
         var tasks = new List<Task<IReadOnlyList<StremioMeta>>>();
-        var movieFolder = cfg.MovieFolder ?? manager.TryGetMovieFolder(userId);
-        var seriesFolder = cfg.SeriesFolder ?? manager.TryGetSeriesFolder(userId);
 
-        // Keep hot config in sync for subsequent searches in this request window.
-        cfg.MovieFolder = movieFolder;
-        cfg.SeriesFolder = seriesFolder;
+        foreach (var cfg in instanceConfigs)
+        {
+            if (requestedTypes.Contains(BaseItemKind.Movie) && cfg.MovieFolder is not null)
+            {
+                tasks.Add(cfg.Stremio!.SearchAsync(searchTerm, StremioMediaType.Movie));
+            }
 
-        if (requestedTypes.Contains(BaseItemKind.Movie) && movieFolder is not null)
-        {
-            tasks.Add(cfg.Stremio.SearchAsync(searchTerm, StremioMediaType.Movie));
-        }
-        else if (requestedTypes.Contains(BaseItemKind.Movie))
-        {
-            log.LogWarning(
-                "No movie folder found, please add your gelato path to a library and rescan. skipping search"
-            );
+            if (requestedTypes.Contains(BaseItemKind.Series) && cfg.SeriesFolder is not null)
+            {
+                tasks.Add(cfg.Stremio!.SearchAsync(searchTerm, StremioMediaType.Series));
+            }
         }
 
-        if (requestedTypes.Contains(BaseItemKind.Series) && seriesFolder is not null)
-        {
-            tasks.Add(cfg.Stremio.SearchAsync(searchTerm, StremioMediaType.Series));
-        }
-        else if (requestedTypes.Contains(BaseItemKind.Series))
+        if (tasks.Count == 0)
         {
             log.LogWarning(
-                "No series folder found, please add your gelato path to a library and rescan. skipping search"
+                "No movie/series folder found on any instance, please add your gelato paths to a library and rescan. skipping search"
             );
+            return [];
         }
 
-        var results = (await Task.WhenAll(tasks)).SelectMany(r => r).ToList();
+        // MULTIlato: merge results from every instance, deduping by (type, stremio id).
+        var results = (await Task.WhenAll(tasks))
+            .SelectMany(r => r)
+            .GroupBy(m => (m.Type, m.Id))
+            .Select(g => g.First())
+            .ToList();
 
-        var filterUnreleased = cfg.FilterUnreleased;
-        var bufferDays = cfg.FilterUnreleasedBufferDays;
+        var filterUnreleased = globalCfg.FilterUnreleased;
+        var bufferDays = globalCfg.FilterUnreleasedBufferDays;
 
         if (filterUnreleased)
         {
