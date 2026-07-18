@@ -31,6 +31,28 @@ public class PluginConfiguration : BasePluginConfiguration
     public List<CatalogConfig> Catalogs { get; set; } = [];
     public List<UserConfig> UserConfigs { get; set; } = [];
 
+    // MULTIlato: multiple AIOStreams instances, each with its own library roots.
+    public List<StremioInstanceConfig> Instances { get; set; } = [];
+
+    // MULTIlato: which instance this effective config was built for (runtime only).
+    [JsonIgnore]
+    [XmlIgnore]
+    public Guid ActiveInstanceId { get; set; } = Guid.Empty;
+
+    // MULTIlato: copy of this config with one instance's url/paths overlaid.
+    public PluginConfiguration ShallowCloneForInstance(StremioInstanceConfig inst)
+    {
+        var clone = (PluginConfiguration)MemberwiseClone();
+        clone.ActiveInstanceId = inst.Id;
+        clone.Url = inst.Url;
+        clone.MoviePath = inst.MoviePath;
+        clone.SeriesPath = inst.SeriesPath;
+        clone.Stremio = null;
+        clone.MovieFolder = null;
+        clone.SeriesFolder = null;
+        return clone;
+    }
+
     public string GetBaseUrl()
     {
         if (string.IsNullOrWhiteSpace(Url))
