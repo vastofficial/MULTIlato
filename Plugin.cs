@@ -130,9 +130,8 @@ public class GelatoPlugin : BasePlugin<PluginConfiguration>, IHasWebPages
                         cfg = userConfig?.ApplyOverrides(root) ?? root;
                     }
 
-                    // Clone-ish: overlay the instance's url/paths onto the effective cfg
-                    // so all downstream code that reads cfg.Url/MoviePath/SeriesPath
-                    // keeps working unchanged.
+                    // Overlay the instance's url/paths onto the effective cfg
+                    // so all downstream reads of cfg.Url/MoviePath/SeriesPath keep working.
                     var inst =
                         root.Instances.FirstOrDefault(i => i.Id == key.InstanceId && i.IsUsable)
                         ?? root.DefaultInstance();
