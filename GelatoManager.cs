@@ -106,16 +106,12 @@ public sealed class GelatoManager(
 
     public Folder? TryGetMovieFolder(Guid userId)
     {
-        return TryGetFolder(
-            GelatoPlugin.Instance!.Configuration.GetEffectiveConfig(userId).MoviePath
-        );
+        return TryGetFolder(GelatoPlugin.Instance!.GetConfig(userId).MoviePath);
     }
 
     public Folder? TryGetSeriesFolder(Guid userId)
     {
-        return TryGetFolder(
-            GelatoPlugin.Instance!.Configuration.GetEffectiveConfig(userId).SeriesPath
-        );
+        return TryGetFolder(GelatoPlugin.Instance!.GetConfig(userId).SeriesPath);
     }
 
     public Folder? TryGetMovieFolder(PluginConfiguration cfg)
@@ -126,6 +122,20 @@ public sealed class GelatoManager(
     public Folder? TryGetSeriesFolder(PluginConfiguration cfg)
     {
         return TryGetFolder(cfg.SeriesPath);
+    }
+
+    // MULTIlato: seed one instance's movie/series roots so libraries can be added right away.
+    public void SeedInstanceFolders(StremioInstanceConfig inst)
+    {
+        if (!string.IsNullOrWhiteSpace(inst.MoviePath))
+        {
+            SeedFolder(inst.MoviePath);
+        }
+
+        if (!string.IsNullOrWhiteSpace(inst.SeriesPath))
+        {
+            SeedFolder(inst.SeriesPath);
+        }
     }
 
     private Folder? TryGetFolder(string path)
